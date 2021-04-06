@@ -1,0 +1,500 @@
+---
+title: "Arctic and Antarctica Sea Ice Time Series Analysis"
+author: "Cullen Blair"
+date: "5/8/2020"
+header-includes:
+  - \usepackage{setspace}\doublespacing
+output:
+  pdf_document: default
+  word_document: default
+---
+# Part 1 (Arctic)
+
+  The time series being analyzed is the area of sea ice in the Arctic in terms of millions of square kilometers from January 1990 through March 2011. After some thought, I decided to use a log transformation supported by the augmented Dickey-Fuller test in the code so that the data could be looked at relatively, as we were dealing with a set mass of ice, the relative change would be more inferential (especially when comparing to Antarctica in part 2 which is significantly larger). Furthermore, by looking at acf plots a 12 month seasonality became apparent and was applied after detrending the series. Speaking of trend, given the increase in variation towards the end of the series I added a trend to my model which proved to be small, yet significant with a wald test statistic exceeding 2.
+
+  Before applying a seasonal difference an AR2 was largely possible. Using AIC as the initial criterion to find the exactness of the seasonal order, the result was a log transformed (2,0,0)(0,1,1)[12] model with drift as our final model for forecasting with largely significant (absolute coefficient estimate/ standard error > 2) coefficients given below:
+
+Series: Arctic
+Arima: (2,0,0)(0,1,1)[12]
+Transformation: Lambda=0
+
+Coefficients:
+
+         ar1      ar2     sma1   drift
+         
+      0.8004  -0.1390  -0.6709  -7e-04
+
+s.e.  0.0666   0.0667   0.0528   3e-04
+
+AIC: -762.92
+
+
+  The model above displayed non-significant lags in the Ljung-Box test as well as the best behaved residuals of any model nearly as competitive via AIC. In terms of forecasting, the models confidence bounds which are highlighted in the plot encapture my test data, and performs much better than the ets model produced.
+
+  When the model was recreated against the full data set, the coefficients had hardly changed at all and the AIC had even reflected a more accurate, and significant, model provided below.
+
+Series: ice$Arctic
+Arima: (2,0,0)(0,1,1)[12]
+Transformation: Lambda=0
+
+  Coefficients:
+  
+      ar1      ar2     sma1   drift
+      
+      0.7869  -0.1281  -0.6682  -8e-04
+      
+s.e.  0.0651   0.0652   0.0498   3e-04
+
+AIC: -811.25
+
+# Part 2 (Antarctica and Comparison)
+
+  Given the fact that the two time series are measuring the same thing at the same time (sea ice surface area from January 1990 through March 2011) only in polar opposite locations, one would expect to come up with similar, yet subtly different models. After log transforming to maintain consistency between the two series being compared, a 12 month seasonality ought to be considered in the model as it follows an inverse seasonality reflected in the series comparison plots. However, this model seemed stationary, and after tinkering with some models it was deemed that a significant trend coefficient could not be found, hence the model does not include drift. The model given below passed all residual diagnostics included in the part 2 code following the summary. When compared to the full data set the coefficient estimates of the largely significant predictors given their estimate / standard error estimates. It can be seen that aside from a drift term in the Arctic model and a seasonal AR1 in the Antarctica model, they follow a similar order overall.
+  
+Series: Antarctica 
+ARIMA(2,0,0)(1,1,1)[12] 
+Box Cox transformation: lambda= 0 
+
+Coefficients:
+
+         ar1      ar2    sar1     sma1
+         
+      0.9449  -0.2260  0.1452  -1.0000
+      
+s.e.  0.0645   0.0647  0.0694   0.0896
+
+AIC=-648.16
+
+Series: ice$Antarctica 
+ARIMA(2,0,0)(1,1,1)[12] 
+Box Cox transformation: lambda= 0 
+
+Coefficients:
+
+         ar1      ar2    sar1     sma1
+         
+      0.9337  -0.2148  0.1400  -1.0000
+      
+s.e.  0.0635   0.0638  0.0681   0.0941
+
+AIC=-682.06
+
+
+  When it came to comparing the two series, the Arctic ARIMA model found was a better predictor of its series with a superior AIC. However models aside, there are a few immediate comparisons to be made from simply plotting the two series (log transformed) over and next to each other given in the comparison code. the first being that the troughs of the Arctic series are the same time of the crests of the surface area for the Antarctica series and vice versa. This might  be explained by the significant results of a correlation test where the correlation coefficient is -0.8.
+  Between a vector auto regression and granger test it was deemed that while the Antarctica series could significantly predict the Artic series at the 10% level, Arctic failed to be a significant predictor of the Antarctica. The best model was selected when p=5 where the and when ran as a forecast produced a fairly accurate result when compared to the general behavior of the series in the past. 
+  In short it appears, that a trendless Antarctica series can better predict the trend stationary and rather increasing variance Arctic series than the other way around. some things to consider in future research is perhaps rising global temperatures influencing the Arctic more so than the Antarctic, perhaps because of who is a polluter location-wise? Other things to consider are that because the Arctic mass is smaller, it may be more susceptible to the recent rise in global temperature compared to the Antarctic.
+
+
+# Code for Part 1
+
+First begin by breaking into test and training data
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+ice=read.csv("~/Desktop/data/sea_ice.csv")
+library(forecast)
+library(TSA)
+library(caret)
+library(tseries)
+train_indices <- seq_len(length.out = floor(x = 0.95 * nrow(x = ice)))
+train <- ice[train_indices,]
+test <- ice[-train_indices,]
+```
+
+Interested in relative change of ice mass, so log of Arctic time series may be a better option.
+
+```{r}
+Arctic=as.ts(train$Arctic)
+par(mfrow=c(2,1))
+plot(Arctic)
+adf.test(Arctic)
+adf.test(log(Arctic))
+plot(log(Arctic))
+```
+
+I am interested in the trend, trend stationarity present in log of time series. augmented dickey fuller test backs stationarity with a p-value of .01 when the alternative hypothesis is stationary.
+
+While the untransformed series is stationary, the log of the series better highlights a trend stationarity present within the data, when ran as a log of the series in the augmented dickey fuller test, it also came back as stationary. Moving forward, given that I am interested in more so the relative change of the sea ice coverage as well as its underlying trend, I will use the log transformation of the sea ice under the assumption of trend stationarity.
+
+```{r}
+par(mfrow=c(2,1))
+acf(log(Arctic))
+pacf(log(Arctic))
+```
+
+Before de-trending, sin wave focusing around lags 1, 12, and 24 in acf suggests a 12 month seasonality, time to detrend.
+
+```{r}
+logicefit=lm((log(Arctic))~seq(1:242))
+par(mfrow=c(3,1))
+plot(as.ts(logicefit$residuals))
+acf(as.ts(logicefit$residuals))
+pacf(as.ts(logicefit$residuals))
+```
+
+After detrending to determine if there is seasonality, given the spikes reflecting a 12 month seasonality, I'd say a seasonal difference ought to be introduced to what is most likely an AR2 with seasonal ARMA components.
+
+```{r}
+par(mfrow=c(2,1))
+ArcticArima1<-Arima(Arctic,lambda=0, include.drift=T,order=c(0,0,0),seasonal=list(order=c(0,1,0),period=12))
+acf(ArcticArima1$residual)
+pacf(ArcticArima1$residual)
+```
+
+Comparing before and after seasonality, a possible AR2 with a seasonal AR1MA1 could be at play. Time to tinker with a handful of model orders to find the best fit via AIC.
+
+```{r}
+ArcticArima2<-Arima(Arctic,lambda=0, include.drift=T,order=c(2,0,0),seasonal=list(order=c(0,1,0),period=12))
+ArcticArima3<-Arima(Arctic,lambda=0, include.drift=T,order=c(0,0,0),seasonal=list(order=c(2,1,1),period=12))
+ArcticArima4<-Arima(Arctic,lambda=0, include.drift=T,order=c(2,0,0),seasonal=list(order=c(0,1,1),period=12))
+ArcticArima5<-Arima(Arctic,lambda=0,order=c(2,0,0),include.drift=T,seasonal=list(order=c(1,1,1),period=12))
+ArcticArima6<-Arima(Arctic,lambda=0,order=c(2,0,0),include.drift=T,seasonal=list(order=c(0,1,1),period=12))
+```
+```{r}
+summary(ArcticArima4)
+summary(ArcticArima5)
+summary(ArcticArima6)
+```
+
+Series: Arctic 
+ARIMA(2,0,0)(0,1,1)[12] with drift 
+Box Cox transformation: lambda= 0 
+
+Coefficients:
+         ar1      ar2     sma1   drift
+      0.8004  -0.1390  -0.6709  -7e-04
+s.e.  0.0666   0.0667   0.0528   3e-04
+
+sigma^2 estimated as 0.001999:  log likelihood=386.46
+AIC=-762.92   AICc=-762.65   BIC=-745.73
+
+Training set error measures:
+                     ME      RMSE       MAE        MPE     MAPE      MASE
+Training set 0.03574796 0.2995877 0.2140887 0.01111889 2.778944 0.1443066
+                  ACF1
+Training set -0.102818
+
+
+Very close to my original prediction, (2,0,0)(0,1,1)[12] (ArcticArima6) produced  2nd best AIC compared to the other models tested at -762.92; however this is within 2 AIC of the best model making it within margin of error to be the most accurate. In addition all of the coefficients are largely significant (coefficient estimate/standard error > (+/-)2) unlike the model (2,0,0)(1,1,1)[12] with the best AIC. Moving into validation and diagnostics. 
+
+
+```{r}
+require("TSA")
+tsdiag.fix = function(mod,h=0){n=mod$nobs
+period=mod$arma[5]
+p=sum(mod$arma[1:4])
+if (h == 0) {if (sum(mod$arma[c(3,4,7)])==0)
+  h = min(10, round(n/5))  else
+    h = min(2*period,round(n/5))  }
+
+
+lbtest=rep(NA,h)
+for (i in (p+1:h)) {lbtest[i]=Box.test(
+  residuals(mod), lag = i, type = "Ljung-Box",fitdf = p)$p.value}
+print(c("max lag = ",h),quote=F)
+print(lbtest[1:h])
+par(mfrow=c(3,1))
+plot(rstandard(mod),type="h",main = "Standardized Residuals")
+abline(h=0)
+abline(h=c(-2,2),lty=2)
+acf(residuals(mod), main = "Residuals ACF")
+limy=max(c(0.05,lbtest),na.rm=T)
+plot(1:h,lbtest[1:h],ylim=c(0,limy),
+     main = "Corrected LjungBox",ylab="p-value",xlab="lag")
+abline(h=0.05,lty=2)
+par(mfrow=c(1,1))}
+```
+
+```{r}
+tsdiag.fix(ArcticArima5)
+tsdiag.fix(ArcticArima6)
+```
+
+With well behaved residuals across the board, including all of which lags to be non-significant according to Ljung-Box test it is fair to say the model (2,0,0)(0,1,1)[12] with drift passes residual diagnostics and general validation with the most significant coefficients.
+
+```{r}
+library(tseries)
+eacf(log(Arctic))
+auto.arima(log(Arctic))
+```
+
+Auto arima is worth taking a peak but results with AIC no where near as competitive as my model previously found, moving forward with (2,0,0)(0,1,1)[12]  with drift as our final model for forecasting with largely significant coefficients given below:
+
+Coefficients:
+         Coefficients:
+         ar1      ar2     sma1   drift
+      0.8004  -0.1390  -0.6709  -7e-04
+s.e.  0.0666   0.0667   0.0528   3e-04
+
+will compare forecast to an ets output as well
+
+```{r}
+fore=forecast(ArcticArima6)
+fore
+test$Arctic
+plot(fore, shaded =T)
+points(243:255,test$Arctic)
+```
+```{r}
+ets(log(Arctic))
+```
+
+Again, ets does not compete with the strength of the arima model found, which is highlighted by the test data falling right into the forecast intervals provided in the output and plotted on the graph. Model forecasts very well, time to compare to full dataset model (train+test).
+
+```{r}
+summary(ArcticArima6)
+ArcticArima7=Arima(ice$Arctic,lambda=0,order=c(2,0,0),include.drift=T,seasonal=list(order=c(0,1,1),period=12))
+summary(ArcticArima7)
+```
+
+Coefficients hardly changed at all (largest Change in coefficient is <.05); good news for showing accuracy of the model, especially because AIC increased past -800 with full data.
+
+# Code for Part 2
+
+looking at the Antarctica sea ice, time to again break into training and test data.
+
+```{r}
+anttrain_indices <- seq_len(length.out = floor(x = 0.95 * nrow(x = ice)))
+anttrain <- ice[anttrain_indices,]
+anttest <- ice[-anttrain_indices,]
+Antarctica<-as.ts(anttrain$Antarctica)
+```
+
+To make comparison easier, log transform like the Arctic
+
+```{r}
+par(mfrow=c(2,1))
+plot(Antarctica)
+plot(log(Antarctica))
+adf.test(Antarctica)
+```
+
+log transformation supported by augmented dickey fuller test where p-value is .01 and alternative hypothesis is stationarity, however a trend seems unlikely to be needed based on initial plots.
+
+```{r}
+par(mfrow=c(2,1))
+acf(log(Antarctica))
+pacf(log(Antarctica))
+```
+
+Looks to be a possible AR2 surely with some seasonal arma components as there is sin wav auto correlation exceeding white noise bounds at lags 1, 12 and 24 again suggesting 12 month seasonality. Let's detrend to be sure.
+
+```{r}
+par(mfrow=c(3,1))
+logicefit=lm((log(Antarctica))~seq(1:242))
+plot(as.ts(logicefit$residuals))
+acf(as.ts(logicefit$residuals))
+pacf(as.ts(logicefit$residuals))
+```
+Detrending did little if anything, but 12 month seasonality ought to be considered. The trend is unlikely but well include at the moment and check the significance of its coefficient later.
+
+```{r}
+AntArima1<-Arima(Antarctica,lambda=0, include.drift=T,order=c(0,0,0),seasonal=list(order=c(0,1,0),period=12))
+par(mfrow=c(2,1))
+acf(AntArima1$residual)
+pacf(AntArima1$residual)
+```
+AR1 with a seasonal low order arma? Tinker with a few models and pick best via AIC.
+
+```{r}
+AntArima2<-Arima(Antarctica,lambda=0, include.drift=T,order=c(2,0,0),seasonal=list(order=c(0,1,1),period=12))
+AntArima3<-Arima(Antarctica,lambda=0, include.drift=T,order=c(0,0,0),seasonal=list(order=c(2,1,1),period=12))
+AntArima4<-Arima(Antarctica,lambda=0, include.drift=T,order=c(2,0,0),seasonal=list(order=c(1,1,1),period=12))
+AntArima5<-Arima(Antarctica,lambda=0,order=c(1,0,0),include.drift=T,seasonal=list(order=c(1,1,1),period=12))
+AntArima6<-Arima(Antarctica,lambda=0,order=c(2,0,0),include.drift=T,seasonal=list(order=c(1,1,0),period=12))
+```
+
+```{r}
+summary(AntArima2)
+summary(AntArima4)
+summary(AntArima5)
+```
+Series: Antarctica 
+ARIMA(2,0,0)(1,1,1)[12] with drift 
+Box Cox transformation: lambda= 0 
+
+Coefficients:
+         ar1      ar2    sar1     sma1  drift
+      0.9407  -0.2323  0.1377  -1.0000  2e-04
+s.e.  0.0644   0.0647  0.0695   0.0747  2e-04
+
+sigma^2 estimated as 0.002933:  log likelihood=329.88
+AIC=-647.75   AICc=-647.38   BIC=-627.12
+
+(2,0,0)(1,1,1)[12] with drift gives the most accurate model but the drift coefficient is insignificant, maybe it is worth removing and re-evaluating.
+
+```{r}
+AntArima11<-Arima(Antarctica,lambda=0,order=c(2,0,0),include.drift=F,seasonal=list(order=c(1,1,1),period=12))
+summary(AntArima4)
+summary(AntArima11)
+```
+Series: Antarctica 
+ARIMA(2,0,0)(1,1,1)[12] 
+Box Cox transformation: lambda= 0 
+
+Coefficients:
+         ar1      ar2    sar1     sma1
+      0.9449  -0.2260  0.1452  -1.0000
+s.e.  0.0645   0.0647  0.0694   0.0896
+
+sigma^2 estimated as 0.002942:  log likelihood=329.08
+AIC=-648.16   AICc=-647.9   BIC=-630.97
+
+(2,0,0)(1,1,1)[12] without drift is not only more accurate and a simpler model, but also has all significant coefficients across the board (coefficient estimate/ standard error > (+/-) 2). Let us move to model validation and residual diagnostics.
+
+```{r}
+tsdiag.fix(AntArima4)
+tsdiag.fix(AntArima11)
+```
+(2,0,0)(1,1,1)[12] Without drift passes with well behaved auto correlations and all non-significant lag values. Model is of good fit for the data.
+
+```{r}
+eacf(log(Antarctica))
+auto.arima(log(Antarctica))
+```
+
+While again auto.arima fails to acquire a better model than my Arima, it does suggest a higher ma order, before moving forward with (2,0,0)(1,1,1)[12] lets tweak with the ma order a tad more.
+
+```{r}
+AntArima7<-Arima(Antarctica,lambda=0,order=c(2,0,0),include.drift=F,seasonal=list(order=c(1,1,2),period=12))
+AntArima8<-Arima(Antarctica,lambda=0,order=c(2,0,1),include.drift=F,seasonal=list(order=c(1,1,2),period=12))
+AntArima9<-Arima(Antarctica,lambda=0,order=c(2,0,0),include.drift=F,seasonal=list(order=c(1,1,3),period=12))
+```
+
+```{r}
+summary(AntArima7)
+summary(AntArima8)
+summary(AntArima9)
+```
+While a third ma term, both seasonal and non seasonal makes the model slightly more accurate, at least one of the coefficients will not be significant, thus I will remain with the simpler, more significant, and essentially just as accurate  (2,0,0)(1,1,1)[12] without drift for forecasting.
+
+```{r}
+fore=forecast(AntArima11)
+fore
+test$Antarctica
+plot(fore, shaded =T)
+points(243:255,test$Antarctica)
+```
+The model successfully forecasts the training data falling well within the confidence bounds.
+
+```{r}
+ets(Antarctica, lambda=0)
+```
+Ets is worth having a look at, but largely fails to find a model as accurate as the (2,0,0)(1,1,1)[12] without drift.
+
+```{r}
+AntArima10<-Arima(ice$Antarctica,lambda=0,order=c(2,0,0),include.drift=F,seasonal=list(order=c(1,1,1),period=12))
+summary(AntArima11)
+summary(AntArima10)
+```
+
+When using full data to create model, coefficients hardly change at all, yet model only becomes more accurate.
+
+
+# Code for Comparison
+
+
+```{r}
+library(lmtest)
+summary(AntArima11)
+summary(ArcticArima6)
+```
+```{r}
+require(vars)
+require(astsa)
+cor.test(log(Arctic), log(Antarctica))
+y = cbind(log(Arctic), log(Antarctica))
+plot(y)
+ts.plot(log(Arctic),log(Antarctica), col = c("red", "blue"))
+```
+
+Strong negative correlation (estimated at -.80) proven by correlation test where alternative hypothesis is correlation does not equal 0 and p-value is less than 1, peaks of one are the troughs of the other.
+
+A couple of immediate comparisons is that the variance while more constant for Antarctica (Blue), is also close to double that of the Arctic off appearances alone. Secondly, and supported by the models of best fit, there is a small, but significant, negative trend for the Arctic ice pack giving a trend stationarity; unlike the Antarctic ice pack which has no significant trend and is ultimately considered stationary.
+
+```{r}
+grangertest(Arctic~Antarctica)
+grangertest(Antarctica~Arctic)
+```
+
+Based on a granger test for causality where the alternative hypothesis is causality, better thought of as predictability, is significant at the 10% level. PErhpas, we'll formulate a vector auto regression on both directions to determine a model estimate.
+
+```{r}
+fitvar1=VAR(y, p=1, type="both")
+fitvar1
+summary(fitvar1)
+```
+
+Based off the model output above, Antarctica's time series can be a significant predictor of Antarctica at the 10% level of significance (p-value is roughly .06); however, backing the granger test results, Arctic fails to significantly be a predictor for Antarctica. I believe since we are dealing with relative change and with the Arctic's increasing variation and small downward trend makes it inaccurate to predict a model that largely follows a 12 month seasonal trend. Vice versa Antarctica follows a simpler model without a trend, with constant variance, as an inverse seasonal trend of the Arctic, making it a fairly good predictor of the Arctic.
+
+```{r}
+acf(residuals(fitvar1))
+pacf(residuals(fitvar1))
+```
+
+Largely unbehaved at various lags, a better model could be found using 
+VAR select.
+
+```{r}
+VARselect(y,type="both")
+fitvar5=VAR(y, p=10, type="both") 
+acf(residuals(fitvar5))
+pacf(residuals(fitvar5))
+```
+
+A model with much better behaved residuals at various lags, will forecast both models.
+
+```{r}
+pred1=predict(fitvar1,n.ahead=20)
+plot(pred1)
+summary(fitvar1)
+pred2=predict(fitvar5,n.ahead=20)
+plot(pred2)
+summary(fitvar5)
+```
+
+First model created, does not really follow the actual seasonality, only general trend. However, second model does a much better job following both direction and behavior considering seasonality. Model estimate is below:
+
+  Estimate Std. Error t value Pr(>|t|)    
+log.Arctic..l1       8.023e-01  6.641e-02  12.082  < 2e-16 ***
+log.Antarctica..l1  -5.568e-02  4.618e-02  -1.206 0.229233    
+log.Arctic..l2      -1.444e-01  8.308e-02  -1.738 0.083609 .  
+log.Antarctica..l2   9.134e-02  7.108e-02   1.285 0.200190    
+log.Arctic..l3      -1.661e-01  7.372e-02  -2.254 0.025259 *  
+log.Antarctica..l3  -5.288e-02  7.884e-02  -0.671 0.503173    
+log.Arctic..l4       7.527e-02  7.527e-02   1.000 0.318447    
+log.Antarctica..l4   2.500e-02  7.982e-02   0.313 0.754438    
+log.Arctic..l5      -6.452e-02  6.908e-02  -0.934 0.351409    
+log.Antarctica..l5  -1.177e-01  7.798e-02  -1.510 0.132580    
+log.Arctic..l6       2.218e-02  8.168e-02   0.272 0.786246    
+log.Antarctica..l6   1.693e-01  6.885e-02   2.458 0.014773 *  
+log.Arctic..l7      -9.796e-02  8.599e-02  -1.139 0.255917    
+log.Antarctica..l7   2.836e-01  6.709e-02   4.227 3.53e-05 ***
+log.Arctic..l8       3.593e-02  8.611e-02   0.417 0.676932    
+log.Antarctica..l8  -4.538e-01  6.892e-02  -6.584 3.61e-10 ***
+log.Arctic..l9      -1.585e-01  8.543e-02  -1.855 0.064931 .  
+log.Antarctica..l9   1.901e-01  6.869e-02   2.767 0.006154 ** 
+log.Arctic..l10      2.589e-01  6.551e-02   3.951 0.000106 ***
+log.Antarctica..l10 -2.504e-02  4.642e-02  -0.539 0.590200    
+const                8.851e-01  3.009e-01   2.941 0.003634 ** 
+trend               -3.720e-04  9.971e-05  -3.731 0.000246 ***
+---
+
+# Full Data Set For Reference
+
+```{r}
+ice
+```
+
+
+
+
+
+
+# Sources
+
+National Snow and Ice Data Center (Data was found on a third party site (weebly.timeseries)
+but matched outputs and files found in NSIDC) link: https://timeseries.weebly.com/data-sets.html https:
+//nsidc.org/arcticseaicenews/sea-ice-tools/
+
+Notes and Lectures of Professor Richard Anderson Sprecher, Time Series Analysis, Spring 2020
